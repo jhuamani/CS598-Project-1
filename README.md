@@ -1,1 +1,1 @@
-# CS598---Project-1
+# CS598-Project-1
