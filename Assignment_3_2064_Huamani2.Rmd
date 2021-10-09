@@ -15,7 +15,7 @@ output:
 # Team Members
 
 Javier Huamani
-NetID: Javier2
+NetID: Huamani2
 UIN: 654292064
 
 Sudha Natarajan
@@ -26,8 +26,8 @@ UIN: 662428072
 
 Contribution from each team member:
 
-* Javier Huamani: Completed the entirety of Part1 of Coding assignment 3.
-* Sudha Natarajan: Completed the entirety of Part2 of Coding assignment 3.
+* Javier Huamani:  Completed the entirety of **Part1** of Coding assignment 3.
+* Sudha Natarajan: Completed the entirety of **Part2** of Coding assignment 3.
 
 # Part 1
 
@@ -141,7 +141,7 @@ The true  gray curve is plotted against the fitted blue curve. Using the optimal
 
 ## Load Data
 ```{r}
-set.seed(8072) 
+set.seed(2064) 
 mydata = read.csv("Sales_Transactions_Dataset_Weekly.csv")
 ts = as.matrix(mydata[, 2:53])
 row.names(ts) = mydata[,1]
@@ -167,7 +167,6 @@ B = t(Bt)
 ### Run kmeans on the coefficient matrix B
 ```{r}
 myK = 6
-par(mfrow=c(2,3))
 mykm1 = kmeans(B,myK, nstart = 20)
 ```
 
@@ -179,6 +178,7 @@ mycenters1 = F %*% t(mykm1$centers)
 
 ### Plot the results 
 ```{r}
+par(mfrow=c(2,3))
 for(k in 1:myK){
   
   id=which(mykm1$cluster==k)
@@ -225,4 +225,9 @@ for(k in 1:myK){
 ```
 
 
-As mentioned earlier, when k-means is run on the B-spline basis matrix with natural cubic spline, the plots are smooth. And as expected when k-means is run on the original matrix the plots are not smooth.
+When k-means is run on the B-spline basis matrix with natural cubic spline, the plots were smooth.
+And as expected when k-means is run on the original matrix, the plots are not smooth.
+
+
+
+
