@@ -1,0 +1,252 @@
+---
+title: "Project_1_Cleanup"
+author: "Javier Huamani"
+date: "10/5/2021"
+output: html_document
+---
+
+## Load Essential Libraries
+
+```{r}
+library(caret)
+library(xgboost)
+set.seed(2064)
+```
+
+## Write data to CSVs 
+
+```{r}
+myData = read.csv("Ames_data.csv")
+testIDs = read.table("project1_testIDs.dat")
+j = 10
+train = myData[-testIDs[,j], ]
+test = myData[testIDs[,j], ]
+test.y = test[, c(1, 83)]
+test = test[, -83]
+write.csv(train,"train.csv",row.names=FALSE)
+write.csv(test, "test.csv",row.names=FALSE)
+write.csv(test.y,"test_y.csv",row.names=FALSE)
+```
+
+## Read data from CSVs
+
+```{r}
+trainData = read.csv("train.csv")
+testData = read.csv("test.csv")
+test.y = read.csv("test_y.csv")
+```
+
+## Review all unique entries in character predictors
+
+```{r}
+
+i = 0
+start = 0
+stop = 50
+for (name in names(trainData[,sapply(trainData,class) == "character"])) {
+  if (i >= start){
+    cat("\nPredictor ",name,"\n\n")
+    print(unique(trainData[,name]))
+  }
+  i = i+1
+  if (i == stop) {break}
+}
+
+  
+```
+
+## Check for any predictors with missing values
+
+```{r}
+# Here we check if any missing values exist in any predictor
+NAcols = apply(trainData,2, function(x) any(is.na(x)))
+print(which(NAcols==TRUE))
+```
+
+## Pre-processing function
+
+```{r}
+clean_data = function(data, forLinear = TRUE){
+  
+  # Electrical Column: Replace Unknown with highest frequency SBrkr
+  data[which(data$Electrical == "Unknown"),"Electrical"] = "SBrkr"
+  
+  # Outlier in Garage_Yr_Blt
+  data[which(data$Garage_Yr_Blt == 2207),"Garage_Yr_Blt"] = 2006
+  data[,"Garage_Yr_Blt"] = as.character(data[,"Garage_Yr_Blt"])
+  data[is.na(data[,"Garage_Yr_Blt"]),"Garage_Yr_Blt"] = "No_Garage"
+  
+  # After revieweing correlations, Garage_Yr_Blt should be removed as it adds too many excess columns with not much added value
+  #data = subset(data, select=-c(Garage_Yr_Blt))
+  
+  # Outlier constraint to 95% quantile
+  num.vars = c("Lot_Frontage", "Lot_Area", "Mas_Vnr_Area", "BsmtFin_SF_2", "Bsmt_Unf_SF", "Total_Bsmt_SF", "Second_Flr_SF", 'First_Flr_SF', "Gr_Liv_Area", "Garage_Area", "Wood_Deck_SF", "Open_Porch_SF", "Enclosed_Porch", "Three_season_porch", "Screen_Porch", "Misc_Val")
+  
+  quan.val = 0.95
+  for (var in num.vars) {
+    temp = data[,var]
+    quan = quantile(temp, probs = quan.val, na.rm = TRUE)
+    temp[temp > quan] = quan
+    data[,var] = temp
+  }
+  
+  # Remove unnecessary columns
+  data = subset(data, select=-c(Street, Utilities, Condition_2, Roof_Matl, Heating, Pool_QC, Misc_Feature, Pool_Area, Longitude,Latitude))
+  
+  # Outputs are not the same, some houses with No_Garages have a Garage_Type filled in and Garage_Cars > 0. This needs to be corrected
+  # A single entry has a Garage_Area of 360, we'll assume that it's 0
+  
+  data[which(data[,"Garage_Cond"] == "No_Garage"),"Garage_Cars"] = 0
+  data[which(data[,"Garage_Cond"] == "No_Garage"),"Garage_Type"] = "No_Garage"
+  data[which(data[,"Garage_Cond"] == "No_Garage"),"Garage_Area"] = 0
+  
+  # Combine bathrooms drop other bathrooms
+  data$Total_Baths = data$Bsmt_Full_Bath + data$Full_Bath + 0.5 * (data$Bsmt_Half_Bath + data$Half_Bath)
+  data = subset(data, select=-c(Bsmt_Full_Bath, Full_Bath, Bsmt_Half_Bath, Half_Bath))
+  
+  # Since Garage Cars and Garage Area are highly correlated, drop Garage Cars
+  data = subset(data, select=-c(Garage_Cars))
+  
+  # Check if house has been remodeled
+  data$Remodeled = 0
+  data$Remodeled[which((data$Year_Remod_Add - data$Year_Built) > 0)] = 1
+  data = subset(data, select=-c(Year_Remod_Add))
+  
+  # Age of purchase
+  data$House_Age = data$Year_Sold - data$Year_Built
+  data = subset(data, select=-c(Year_Sold, Year_Built))
+  
+  # Total house square footage, excluded Mas_Vnr_Area, Lot_Area and Pool_Area
+  data$Total_SF = data$Total_Bsmt_SF + data$First_Flr_SF + data$Second_Flr_SF + data$Low_Qual_Fin_SF + data$Gr_Liv_Area + data$Garage_Area + data$Wood_Deck_SF + data$Open_Porch_SF + data$Enclosed_Porch + data$Three_season_porch + data$Screen_Porch
+  
+  data = subset(data, select=-c(Total_Bsmt_SF, BsmtFin_SF_1, BsmtFin_SF_2, Bsmt_Unf_SF, First_Flr_SF, Second_Flr_SF, Low_Qual_Fin_SF, Gr_Liv_Area, Garage_Area, Wood_Deck_SF, Open_Porch_SF, Enclosed_Porch, Three_season_porch, Screen_Porch))
+  
+  # Hot encode the data
+  if (forLinear){
+    data_mod = dummyVars(~ .,data=data, fullRank=TRUE)
+  }
+  else {
+    data_mod = dummyVars(~ .,data=data)
+  }
+  
+  data = data.frame(predict(data_mod, newdata = data))
+  
+  data
+}
+```
+
+
+## Use cleaning function on trainData and testData separately
+
+```{r}
+# Cleaned and encoded trainData
+trainData = clean_data(trainData, forLinear = FALSE)
+
+# Cleaned and encoded testData
+testData = clean_data(testData, forLinear = FALSE)
+
+print(dim(trainData))
+print(dim(testData))
+```
+
+## Remove any unseen predictors and/or include any missing predictors in testData
+
+```{r}
+names_intest_intrain = names(testData)[which((names(testData) %in% names(trainData)))]
+names_intrain_nottest = names(trainData)[which(!(names(trainData) %in% names(testData)))]
+
+# Remove any predictors in testData not present in trainData 
+if (length(names_intest_intrain) != 0) {
+  testData = testData[,names_intest_intrain]
+}
+
+# For any predictor present in trainData but not testData add 0 columns
+if (length(names_intrain_nottest) != 0) {
+  for (name in names_intrain_nottest) {
+    if (name != "Sale_Price"){
+      testData[,name] = 0
+    }
+  }
+}
+
+# Final check to ensure that only column that is different is Sale_Price
+print(names(testData)[which(!(names(testData) %in% names(trainData)))])
+print(names(trainData)[which(!(names(trainData) %in% names(testData)))])
+
+```
+
+## For xgboost, convert every dataframe into a matrix and ensure all predictors are ordered
+
+```{r}
+train_mat_df = subset(trainData, select=-c(Sale_Price))
+train_mat = as.matrix(train_mat_df[,order(colnames(train_mat_df))])
+train_Y = trainData$Sale_Price
+test_mat = as.matrix(testData[,order(colnames(testData))])
+
+print(dim(train_mat))
+print(dim(test_mat))
+```
+
+
+# Train xgboost Model
+
+```{r}
+xgb.model = xgboost(data = train_mat, 
+                       label = train_Y, max_depth = 6,
+                       eta = 0.05, nrounds = 5000,
+                       subsample = 0.5,
+                       verbose = FALSE)
+```
+
+## Check prediction results
+
+```{r}
+summary(xgb.model)
+tmp = predict(xgb.model, test_mat)
+sqrt(mean((log(tmp) - log(test.y[,2]))^2))
+```
+
+# Train linear regression model with regularization
+
+
+```{r eval=FALSE}
+library(glmnet)
+
+cv.out = cv.glmnet(train_mat, train_Y, alpha = 1)
+
+# Output features w/ non-zero coefficients
+sel.vars = predict(cv.out, type="nonzero",s = cv.out$lambda.1se)[,1]
+
+cv.out <- cv.glmnet(train_mat[, sel.vars], train_Y, alpha = 0)
+tmp <-predict(cv.out, s = cv.out$lambda.min, newx = test_mat[,sel.vars])
+
+
+```
+
+
+```{r eval=FALSE}
+summary(tmp)
+sqrt(mean((log(tmp) - log(test.y[,2]))^2))
+```
+
+
+
+
+```{r}
+# Check correlation b/w all numeric columns and any items w/ a threshold above 0.7
+corr_mat = round(cor(trainData),digits=2)
+for (name in colnames(corr_mat)){
+  corr_check = corr_mat[which(abs(corr_mat[,name]) < 0.3),name]
+  if (length(corr_check)>1 && name == "Sale_Price"){
+    print(name)
+    print(corr_check)
+  }
+}
+
+# Garage_Area and Garage_Cars are very highly correlated, we may be able to remove one of these columns
+```
+
+
+
+
+
