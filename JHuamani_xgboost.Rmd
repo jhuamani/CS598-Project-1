@@ -8,6 +8,7 @@ output: html_document
 ## Load Essential Libraries
 
 ```{r}
+start.time = Sys.time()
 library(caret)
 library(xgboost)
 set.seed(2064)
@@ -122,12 +123,7 @@ clean_data = function(data, forLinear = TRUE){
   data = subset(data, select=-c(Total_Bsmt_SF, BsmtFin_SF_1, BsmtFin_SF_2, Bsmt_Unf_SF, First_Flr_SF, Second_Flr_SF, Low_Qual_Fin_SF, Gr_Liv_Area, Garage_Area, Wood_Deck_SF, Open_Porch_SF, Enclosed_Porch, Three_season_porch, Screen_Porch))
   
   # Hot encode the data
-  if (forLinear){
-    data_mod = dummyVars(~ .,data=data, fullRank=TRUE)
-  }
-  else {
-    data_mod = dummyVars(~ .,data=data)
-  }
+  data_mod = dummyVars(~ .,data=data, fullRank = forLinear)
   
   data = data.frame(predict(data_mod, newdata = data))
   
@@ -206,47 +202,10 @@ tmp = predict(xgb.model, test_mat)
 sqrt(mean((log(tmp) - log(test.y[,2]))^2))
 ```
 
-# Train linear regression model with regularization
-
-
-```{r eval=FALSE}
-library(glmnet)
-
-cv.out = cv.glmnet(train_mat, train_Y, alpha = 1)
-
-# Output features w/ non-zero coefficients
-sel.vars = predict(cv.out, type="nonzero",s = cv.out$lambda.1se)[,1]
-
-cv.out <- cv.glmnet(train_mat[, sel.vars], train_Y, alpha = 0)
-tmp <-predict(cv.out, s = cv.out$lambda.min, newx = test_mat[,sel.vars])
-
-
-```
-
-
-```{r eval=FALSE}
-summary(tmp)
-sqrt(mean((log(tmp) - log(test.y[,2]))^2))
-```
-
-
-
+## Output time to run
 
 ```{r}
-# Check correlation b/w all numeric columns and any items w/ a threshold above 0.7
-corr_mat = round(cor(trainData),digits=2)
-for (name in colnames(corr_mat)){
-  corr_check = corr_mat[which(abs(corr_mat[,name]) < 0.3),name]
-  if (length(corr_check)>1 && name == "Sale_Price"){
-    print(name)
-    print(corr_check)
-  }
-}
-
-# Garage_Area and Garage_Cars are very highly correlated, we may be able to remove one of these columns
+stop.time = Sys.time()
+print(start.time - stop.time)
 ```
-
-
-
-
 
