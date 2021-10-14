@@ -19,7 +19,7 @@ set.seed(2064)
 ```{r}
 myData = read.csv("Ames_data.csv")
 testIDs = read.table("project1_testIDs.dat")
-j = 10
+j = 5
 train = myData[-testIDs[,j], ]
 test = myData[testIDs[,j], ]
 test.y = test[, c(1, 83)]
@@ -78,7 +78,7 @@ clean_data = function(data, forLinear = TRUE){
   data[is.na(data[,"Garage_Yr_Blt"]),"Garage_Yr_Blt"] = "No_Garage"
   
   # After revieweing correlations, Garage_Yr_Blt should be removed as it adds too many excess columns with not much added value
-  #data = subset(data, select=-c(Garage_Yr_Blt))
+  data = subset(data, select=-c(Garage_Yr_Blt))
   
   # Outlier constraint to 95% quantile
   num.vars = c("Lot_Frontage", "Lot_Area", "Mas_Vnr_Area", "BsmtFin_SF_2", "Bsmt_Unf_SF", "Total_Bsmt_SF", "Second_Flr_SF", 'First_Flr_SF', "Gr_Liv_Area", "Garage_Area", "Wood_Deck_SF", "Open_Porch_SF", "Enclosed_Porch", "Three_season_porch", "Screen_Porch", "Misc_Val")
@@ -187,9 +187,10 @@ print(dim(test_mat))
 # Train xgboost Model
 
 ```{r}
+# Original eta = 0.05 and nrounds = 5000
 xgb.model = xgboost(data = train_mat, 
                        label = train_Y, max_depth = 6,
-                       eta = 0.05, nrounds = 5000,
+                       eta = 0.04, nrounds = 6000,
                        subsample = 0.5,
                        verbose = FALSE)
 ```
