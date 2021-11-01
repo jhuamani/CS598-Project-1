@@ -1,13 +1,13 @@
 ---
-  title: "Assignment_4_2064_Huamani2"
+title: "Assignment_4_2064_Huamani2"
 author: "Javier Huamani"
 date: "10/25/2021"
 output: html_document
 ---
+
+# Part 1
   
-  # Part 1
-  
-  ## Prepared EM Functions 
+## Prepared EM Functions 
   
   
 ```{r}
@@ -134,6 +134,26 @@ Rout <- em(modelName = "EEE", data = faithful,
            parameters = ini0)$parameters
 list(Rout$pro, Rout$mean, Rout$variance$Sigma)
 ```
+
+## Derivations
+
+```{r 1_2, echo=FALSE, fig.cap="1 and 2", out.width = '100%'}
+knitr::include_graphics("1st.jpg")
+```
+
+```{r 3_4, echo=FALSE, fig.cap="3 and 4", out.width = '100%'}
+knitr::include_graphics("2nd.jpg")
+```
+
+```{r 5, echo=FALSE, fig.cap="5", out.width = '100%'}
+knitr::include_graphics("3rd.jpg")
+knitr::include_graphics("4th.jpg")
+knitr::include_graphics("5th.jpg")
+```
+
+
+# Part 2
+
 
 ```{r}
 myBW = function(x, para, n.iter = 100){
@@ -345,13 +365,6 @@ cbind(Rout.Z, myout.Z)[c(1:10, 180:200), ]
 sum(Rout.Z != myout.Z)
 ```
 
-## Tips and suggestions
-
-- When testing your code, you can run your EM algorithm with one iteration and then compare your estimates for (A, B) with the ones from `HMM`.
-
-- In case the estimates for (A, B) from your EM code don’t match the ones from HMM, you can use the estimates for (A, B) from HMM as the input for your Viterbi algorithm, so you won’t be penalized twice for any error in your EM code. 
-
-- Many calculation in HMM involves products of series of probabilities, which, consequently, are quite small. Sometimes, they are so small that R would treat them as zero. This would create a problem for the Viterbi algorithm where we need to decide which one is larger than the other one; if R truncates them to be zero, we cannot make that comparison. This is why we suggest to compute those probabilities in log-scale in your Viterbi algorithm.
 
 
 
