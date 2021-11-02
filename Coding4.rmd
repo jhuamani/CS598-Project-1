@@ -2,8 +2,33 @@
 title: "Assignment_4_2064_Huamani2"
 author: "Javier Huamani"
 date: "10/25/2021"
-output: html_document
+output: 
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: readable
+    toc: yes
+    toc_float: yes
 ---
+
+# Team Members
+
+Javier Huamani
+NetID: Huamani2
+UIN: 654292064
+
+Sudha Natarajan
+NetID: Sudha2
+UIN: 662428072
+
+## Contributions
+
+Contribution from each team member:
+
+* Javier Huamani:  Completed the entirety of **Part1** of Coding assignment 4 including the derivations.
+* Sudha Natarajan: Completed the entirety of **Part2** of Coding assignment 4.
+
 
 # Part 1
   
