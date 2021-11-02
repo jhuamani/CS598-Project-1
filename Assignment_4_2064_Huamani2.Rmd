@@ -1,7 +1,7 @@
 ---
 title: "Assignment_4_2064_Huamani2"
 author: "Javier Huamani"
-date: "10/25/2021"
+date: "11/01/2021"
 output: 
   html_document:
     toc: yes
