@@ -1,0 +1,200 @@
+---
+title: "Project 1 - Linear Regression with Lasso and Elastic Net"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  html_notebook:
+    theme: readable
+    toc: yes
+    toc_float: yes
+date: "Fall 2021"
+---
+
+```{r, echo=FALSE}
+library(glmnet) 
+library(pls)
+set.seed(8072) # change the seed to be the last 4-dig of your UIN
+```
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Find missing data
+```{r}
+data = read.csv("Ames_data.csv",stringsAsFactors = FALSE)
+missing.n = sapply(names(data),function(x) length(which(is.na(data[, x]))))
+which(missing.n != 0)  # 60th col: Garage_Yr_Blt
+id = which(is.na(data$Garage_Yr_Blt))
+length(id)
+```
+
+
+### Read testIDs and separate train and test data and write into files
+```{r}
+
+testIDs <- read.table("project1_testIDs.dat")
+j <- 2
+train <- data[-testIDs[,j], ]
+test <- data[testIDs[,j], ]
+
+test.y = log(test[,83])
+train.y = log(train[,83])
+
+write.csv(train,"train.csv",row.names=FALSE)
+write.csv(test, "test.csv",row.names=FALSE)
+write.csv(test.y,"test_y.csv",row.names=FALSE)
+write.csv(train.y,"train_y.csv",row.names=FALSE)
+```
+
+
+###  Read the train and test data, set 'na' Garage Year fields as 0
+
+```{r}
+train <- read.csv("train.csv",stringsAsFactors = FALSE)
+test <- read.csv("test.csv",stringsAsFactors = FALSE)
+
+train.x = train[, -c(1, 83)]
+test.x = test[, -c(1, 83)]
+
+train.x$Garage_Yr_Blt[is.na(train.x$Garage_Yr_Blt)] = 0
+test.x$Garage_Yr_Blt[is.na(test.x$Garage_Yr_Blt)] = 0
+
+
+```
+
+
+### Windorize numeric columns in Train data
+```{r}
+
+winsor.vars <- c("Lot_Frontage", "Lot_Area", "Mas_Vnr_Area", "BsmtFin_SF_2", "Bsmt_Unf_SF", "Total_Bsmt_SF", "Second_Flr_SF", 'First_Flr_SF', "Gr_Liv_Area", "Garage_Area", "Wood_Deck_SF", "Open_Porch_SF", "Enclosed_Porch", "Three_season_porch", "Screen_Porch", "Misc_Val")
+
+quan.value <- 0.95
+for(var in winsor.vars){
+tmp <- train.x[, var]
+myquan <- quantile(tmp, probs = quan.value, na.rm = TRUE)
+tmp[tmp > myquan] <- myquan
+train.x[, var] <- tmp
+}
+
+```
+
+
+### Remove columns that have predominantly same values; Factorize the text columns in Train data and add additional columns for each of the factors
+
+```{r}
+
+remove.var <- c('Street', 'Utilities', 'Condition_2', 'Roof_Matl', 'Heating', 'Pool_QC', 'Misc_Feature', 'Low_Qual_Fin_SF', 'Pool_Area', 'Longitude','Latitude')
+
+
+categorical.vars <- colnames(train.x)[which(sapply(train.x, function(x) mode(x)=="character"))]
+train.matrix <- train.x[, !colnames(train.x) %in% categorical.vars, drop=FALSE]
+
+n.train <- nrow(train.matrix)
+
+for(var in categorical.vars){
+    mylevels <- sort(unique(train.x[, var]))
+    m <- length(mylevels)
+    m <- ifelse(m>2, m, 1)
+    tmp.train <- matrix(0, n.train, m)
+    col.names <- NULL
+    for(j in 1:m){
+      tmp.train[train.x[, var]==mylevels[j], j] <- 1
+      col.names <- c(col.names, paste(var, '_', mylevels[j], sep=''))
+      }
+    colnames(tmp.train) <- col.names
+    train.matrix <- cbind(train.matrix, tmp.train)
+  }
+
+train.matrix1 <- train.matrix[, !colnames(train.matrix) %in% remove.var, drop = FALSE ]
+
+
+```
+
+### Factorize the text columns in Test data
+
+```{r}
+categorical.vars <- colnames(test)[which(sapply(test, function(x) mode(x)=="character"))]
+test.matrix <- test[, !colnames(test) %in% categorical.vars, drop=FALSE]
+
+n.test <- nrow(test.matrix)
+
+for(var in categorical.vars){
+    mylevels <- sort(unique(test[, var]))
+    m <- length(mylevels)
+    m <- ifelse(m>2, m, 1)
+    tmp.test <- matrix(0, n.test, m)
+    col.names <- NULL
+    for(j in 1:m){
+      tmp.test[test[, var]==mylevels[j], j] <- 1
+      col.names <- c(col.names, paste(var, '_', mylevels[j], sep=''))
+      }
+    colnames(tmp.test) <- col.names
+    test.matrix <- cbind(test.matrix, tmp.test)
+  }
+```
+
+
+### Compare the columns in train and test; 
+### From Test, remove the columns that are not in Train; 
+### To Test, add the columns are in Train and set the columns to be all zeros
+### Ensure that the columns are in the same order in Test and Train
+
+```{r}
+
+test.matrix1 <- test.matrix[, colnames(test.matrix) %in% colnames(train.matrix1), drop = FALSE ]
+add.vars = colnames(train.matrix1[!colnames(train.matrix1) %in% colnames(test.matrix1)])
+add.matrix = matrix(0,n.test,length(add.vars))
+colnames(add.matrix) = add.vars
+test.matrix1 = cbind(test.matrix1,add.matrix)
+test.matrix1 = test.matrix1[,colnames(train.matrix1)]
+
+```
+
+### Windorize the same numeric columns in Test data
+
+```{r}
+
+quan.value <- 0.95
+for(var in winsor.vars){
+tmp <- test.matrix1[, var]
+myquan <- quantile(tmp, probs = quan.value, na.rm = TRUE)
+tmp[tmp > myquan] <- myquan
+test.matrix1[, var] <- tmp
+}
+
+```
+
+### Run Lasso
+
+```{r}
+library(glmnet)
+cv.out <- cv.glmnet(as.matrix(train.matrix1), train.y, alpha = 1)
+sel.vars <- predict(cv.out, type="nonzero",s = cv.out$lambda.1se)$X1
+cv.out <- cv.glmnet(as.matrix(train.matrix1[, sel.vars]), train.y, alpha = 0)
+tmp <-predict(cv.out, s = cv.out$lambda.min, newx = as.matrix(test.matrix1[, sel.vars]))
+
+
+
+```
+
+### Compute root mean squared error
+```{r}
+mean(sqrt((test.y - tmp)^2))
+```
+
+
+### Run elastic net with alpha = 0.2
+
+```{r}
+cv.out <- cv.glmnet(as.matrix(train.matrix1), train.y, alpha = 0.2)
+tmp <-predict(cv.out, s = cv.out$lambda.min, newx = as.matrix(test.matrix1))
+
+```
+
+### Compute root mean squared error
+```{r}
+mean(sqrt((test.y - tmp)^2))
+```

@@ -1,0 +1,233 @@
+---
+title: "Assignment_3_2064_Huamani2"
+author: "Javier Huamani"
+date: "10/7/2021"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  html_notebook:
+    theme: readable
+    toc: yes
+    toc_float: yes
+---
+
+# Team Members
+
+Javier Huamani
+NetID: Huamani2
+UIN: 654292064
+
+Sudha Natarajan
+NetID: Sudha2
+UIN: 662428072
+
+## Contributions
+
+Contribution from each team member:
+
+* Javier Huamani:  Completed the entirety of **Part1** of Coding assignment 3.
+* Sudha Natarajan: Completed the entirety of **Part2** of Coding assignment 3.
+
+# Part 1
+
+## Prepared Functions
+
+```{r}
+lo.lev <- function(x1, sp){
+  # x1: n-by-1 feature vector
+  # sp: a numerical value for "span"
+  
+  n = length(x1);
+  lev = rep(0, n)
+  
+  for (i in 1:n) {
+    y = rep(0, n)
+    y[i]=1
+    y_hat = loess(y ~ x1, span=sp, control = loess.control(surface = "direct"))
+    lev[i]= y_hat$fitted[i]
+  }
+  
+  return(lev)
+}
+
+onestep_CV <- function(x1, y1, sp){
+  
+  # Residual vector (y - y^)
+  res = loess(y1 ~ x1, span=sp, control = loess.control(surface = "direct"))$residuals
+  
+  # Leverage of S matrix
+  lev = lo.lev(x1,sp)
+  
+  # Trace of S matrix
+  trS = sum(lev)
+  
+  # Number of rows
+  n = length(lev) 
+  
+  cv = sum((res/(1-lev))^2)/n
+  gcv = sum((res/(1-trS/n))^2)/n
+  
+  return(list(cv = cv, gcv = gcv))
+}
+
+myCV <- function(x1, y1, span){
+  # x1: feature vector of length n
+  # y1: response vector of length n
+  # span: a sequence of values for "span"
+  
+  m = length(span)
+  cv = rep(0, m)
+  gcv = rep(0, m)
+  
+  for(i in 1:m){
+    tmp = onestep_CV(x1, y1, span[i])
+    cv[i] = tmp$cv
+    gcv[i] = tmp$gcv
+  }
+  return(list(cv = cv, gcv = gcv))
+}
+```
+
+## Test the Function
+
+```{r}
+myData = read.csv("Coding3_Data.csv")
+plot(myData$x, myData$y, xlab="", ylab="")
+```
+
+```{r}
+span1 = seq(from = 0.2, by = 0.05, length = 15 )
+cv.out = myCV(myData$x, myData$y, span1)
+```
+
+## Print out Results
+
+```{r}
+myout = data.frame(CV = cv.out$cv, 
+                   GCV = cv.out$gcv, 
+                   span = span1)
+myout
+```
+
+```{r}
+myout$span[myout$GCV == min(myout$GCV)]
+```
+
+```{r}
+myout$span[myout$CV == min(myout$CV)]
+```
+
+The optimal span for both LOO-CV and GCV agreed at a 0.5 value.
+
+## Plot the Fitted Curve
+
+```{r}
+spangcv.min = 0.5
+plot(myData$x, myData$y, xlab="", ylab="", col="gray");
+fx = 1:50/50;
+fy = sin(12*(fx+0.2))/(fx+0.2)
+lines(fx, fy, col=8, lwd=2);
+
+f = loess(y ~ x, myData, span = spangcv.min)
+lines(fx, predict(f, data.frame(x = fx), surface = "direct"), 
+      lty=2, lwd=2, col="blue")
+```
+
+
+The true  gray curve is plotted against the fitted blue curve. Using the optimal span value the fitted curve shows changes in curvature similar to the true curve. The X = 0.2 region is where both curves appear to agree the most. However, the curves are shifted slightly at X = 0.4 and 0.7 possibly due to missing and outlier data. 
+
+# Part 2
+
+## Load Data
+```{r}
+set.seed(2064) 
+mydata = read.csv("Sales_Transactions_Dataset_Weekly.csv")
+ts = as.matrix(mydata[, 2:53])
+row.names(ts) = mydata[,1]
+ts = ts - rowMeans(ts)
+```
+
+## Clustering with B
+Run k-means algorithm on the coefficient matrix B to cluster the 811 products into 6 clusters. Display  time series for products in the same cluster in one figure along with the corresponding cluster center; arrange the 6 figures in 2-by-3 format. 
+
+```{r}
+library(splines)
+F = ns(1:52, df=9, intercept = FALSE)
+F = t (t(F) - colMeans(F))
+
+Bt = solve (t(F) %*% F) %*% t(F) %*% t(ts)
+B = t(Bt)
+
+#X:  811 by 52
+#B:  811 by 9 
+#F:  52 by 9
+```
+
+### Run kmeans on the coefficient matrix B
+```{r}
+myK = 6
+mykm1 = kmeans(B,myK, nstart = 20)
+```
+
+### Get the cluster centers
+```{r}
+mycenters1 = F %*% t(mykm1$centers)
+#dim(mycenters1) 52 x 6
+```
+
+### Plot the results 
+```{r}
+par(mfrow=c(2,3))
+for(k in 1:myK){
+  
+  id=which(mykm1$cluster==k)
+  
+  plot(NA, xlim = c(1, ncol(ts)), ylim = range(ts), 
+       xlab = "Weeks", ylab = "Weekly Sales")
+  
+  for(i in 1:length(id))
+    lines(1:ncol(ts), ts[id[i],] , col="gray")
+  
+  lines(1:ncol(ts), mycenters1[,k], col="red")
+}
+
+```
+
+
+These resulting plots are smooth.
+
+## Clustering with X
+Run k-means algorithm on the original time series matrix X to cluster the 811 products into 6 clusters. Display time series for products in the same cluster in one figure along with the corresponding cluster center; arrange the 6 figures in 2-by-3 format. 
+
+
+### Run k-means on the original matrix X
+```{r}
+mykm2 = kmeans(ts,myK, nstart = 20)
+```
+
+### Get the cluster centers
+```{r}
+mycenters2 = t(mykm2$centers)
+#dim(mycenters2) 52 x 6
+```
+
+### Plot the results
+```{r}
+par(mfrow=c(2,3))
+for(k in 1:myK){
+  id=which(mykm2$cluster==k)
+  plot(NA, xlim = c(1, ncol(ts)), ylim = range(ts), xlab = "Weeks", ylab = "Weekly Sales")
+  for(i in 1:length(id))
+    lines(1:ncol(ts), ts[id[i],] , col="gray")
+  lines(1:ncol(ts), mycenters2[,k], col="red")
+}
+```
+
+
+When k-means is run on the B-spline basis matrix with natural cubic spline, the plots were smooth.
+And as expected when k-means is run on the original matrix, the plots are not smooth.
+
+
+
+
