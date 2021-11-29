@@ -1,0 +1,226 @@
+---
+title: "Project3"
+author: "Javier Huamani"
+date: "11/27/2021"
+output: html_document
+---
+
+## Initial Split Generation (Don't run again)
+
+```{r}
+data <- read.table("alldata.tsv", stringsAsFactors = FALSE,
+                  header = TRUE)
+testIDs <- read.csv("project3_splits.csv", header = TRUE)
+for(j in 1:5){
+  dir.create(paste("split_", j, sep=""))
+  train <- data[-testIDs[,j], c("id", "sentiment", "review") ]
+  test <- data[testIDs[,j], c("id", "review")]
+  test.y <- data[testIDs[,j], c("id", "sentiment", "score")]
+  
+  tmp_file_name <- paste("split_", j, "/", "train.tsv", sep="")
+  write.table(train, file=tmp_file_name, 
+              quote=TRUE, 
+              row.names = FALSE,
+              sep='\t')
+  tmp_file_name <- paste("split_", j, "/", "test.tsv", sep="")
+  write.table(test, file=tmp_file_name, 
+              quote=TRUE, 
+              row.names = FALSE,
+              sep='\t')
+  tmp_file_name <- paste("split_", j, "/", "test_y.tsv", sep="")
+  write.table(test.y, file=tmp_file_name, 
+            quote=TRUE, 
+            row.names = FALSE,
+            sep='\t')
+}
+```
+
+
+## Vocabulary Generation
+
+
+```{r}
+train = read.table(paste("split_1/train.tsv", sep=""),
+                     stringsAsFactors = FALSE,
+                     header = TRUE)
+
+for (j in 2:5){
+  temp_train = read.table(paste("split_", j, "/train.tsv", sep=""),
+                     stringsAsFactors = FALSE,
+                     header = TRUE)
+  train = rbind(train, temp_train)
+}
+
+# Regex operation to match html tags in a non-greedy manner
+train$review = gsub('<.*?>', ' ', train$review)
+```
+
+```{r}
+library(text2vec)
+stop_words = c("i", "me", "my", "myself", 
+               "we", "our", "ours", "ourselves", 
+               "you", "your", "yours", 
+               "their", "they", "his", "her", 
+               "she", "he", "a", "an", "and",
+               "is", "was", "are", "were", 
+               "him", "himself", "has", "have", 
+               "it", "its", "the", "us")
+
+# Creates an iterator, ensures all text is lowercase and uses a word tokenizer for a DTM
+it_train = itoken(train$review,
+                  preprocessor = tolower, 
+                  tokenizer = word_tokenizer)
+```
+
+
+```{r}
+# Creates a vocabulary, excluding stopwords, of 1 to 4 grams
+tmp.vocab = create_vocabulary(it_train, 
+                              stopwords = stop_words, 
+                              ngram = c(1L,4L))
+
+# Reduce vocabulary size by accepting terms w/ min 10 count and that appear b/w 0.1% - 50% of docs
+tmp.vocab = prune_vocabulary(tmp.vocab, term_count_min = 10,
+                             doc_proportion_max = 0.5,
+                             doc_proportion_min = 0.001)
+
+vectorizer = vocab_vectorizer(tmp.vocab)
+
+# Create a DTM using the iterator and vocabulary
+dtm_train  = create_dtm(it_train, vectorizer)
+```
+
+
+```{r}
+library(slam)
+
+v.size = dim(dtm_train)[2]
+ytrain = train$sentiment
+
+summ = matrix(0, nrow=v.size, ncol=4)
+summ[,1] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_train[ytrain==1, ]), mean)
+summ[,2] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_train[ytrain==1, ]), var)
+summ[,3] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_train[ytrain==0, ]), mean)
+summ[,4] = colapply_simple_triplet_matrix(
+  as.simple_triplet_matrix(dtm_train[ytrain==0, ]), var)
+
+n1 = sum(ytrain); 
+n = length(ytrain)
+n0 = n - n1
+
+# 2 sample t statistic
+myp = (summ[,1] - summ[,3])/ sqrt(summ[,2]/n1 + summ[,4]/n0)
+```
+
+
+```{r}
+words = colnames(dtm_train)
+id = order(abs(myp), decreasing=TRUE)[1:2000]
+pos.list = words[id[myp[id]>0]]
+neg.list = words[id[myp[id]<0]]
+```
+
+
+```{r}
+library(glmnet)
+set.seed(2064)
+
+# Use important words
+new_dtm_train = dtm_train[,words[id]]
+
+# Logistic Regression
+tmpfit = glmnet(x = new_dtm_train, 
+                y = train$sentiment, 
+                alpha = 1,
+                family='binomial')
+
+# The number of non-zero coefficients
+tmpfit$df
+```
+
+```{r}
+# Output new shorter than 1000 vocabulary w/ most important terms
+myvocab = colnames(new_dtm_train)[which(tmpfit$beta[,41] != 0)]
+
+write.table(myvocab, file="myvocab.txt", 
+            quote=TRUE, 
+            row.names = FALSE,
+            sep='\t')
+```
+
+
+## Split 1 Trial
+
+
+```{r}
+voc = read.table("myvocab.txt", stringsAsFactors = FALSE,
+                  header = TRUE)
+
+j = 1
+setwd(paste("split_", j, sep=""))
+trial_data <- read.table("train.tsv", stringsAsFactors = FALSE,
+                  header = TRUE)
+```
+
+
+```{r}
+vectorizer = vocab_vectorizer(create_vocabulary(voc[[1]], ngram = c(1L, 2L)))
+
+it_trial = itoken(trial_data$review,
+                  preprocessor = tolower, 
+                  tokenizer = word_tokenizer)
+
+dtm_trial = create_dtm(it_trial, vectorizer)
+```
+
+```{r}
+# Logistic Regression
+newfit = cv.glmnet(x = dtm_trial, 
+                y = trial_data$sentiment, 
+                alpha = 0.1,
+                type.measure = 'auc',
+                family='binomial')
+
+```
+
+
+```{r}
+max(newfit$cvm)
+```
+
+
+```{r}
+# Get test data
+setwd(paste("split_", j, sep=""))
+test = read.table("test.tsv",
+                   stringsAsFactors = FALSE,
+                   header = TRUE)
+test.y = read.table("test_y.tsv",
+                   stringsAsFactors = FALSE,
+                   header = TRUE)
+
+# Regex operation to match html tags in a non-greedy manner
+test$review = gsub('<.*?>', ' ', test$review)
+
+it_test = itoken(test$review,
+                  preprocessor = tolower, 
+                  tokenizer = word_tokenizer)
+
+dtm_test  = create_dtm(it_test, vectorizer)
+```
+
+```{r}
+preds = predict(newfit, dtm_test, s=newfit$lambda.min)
+```
+
+
+```{r}
+glmnet:::auc(test.y$sentiment, preds)
+```
+
+
+
+
